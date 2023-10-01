@@ -2,28 +2,37 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
-	"strconv"
-
-	"github.com/olekukonko/tablewriter"
 	"proxy-cos-cdn/check"
 	"proxy-cos-cdn/proxy"
 	"proxy-cos-cdn/tencentyun"
+	"strconv"
+
+	"github.com/olekukonko/tablewriter"
 )
 
 func main() {
 	var (
-		bucketRegion = flag.String("bucketRegion", "", "桶的Region（必填）")
-		secretID     = flag.String("secretID", "", "腾讯云SecretID（必填）")
-		secretKey    = flag.String("secretKey", "", "腾讯云SecretKey（必填）")
-		domainSuffix = flag.String("domainSuffix", "", "域名（必填）")
-		cdnCheck     = flag.Bool("cdnCheck", false, "是否检查cdn域名是否正常解析，默认为false")
+		bucketRegion = flag.String("bucket-region", "", "Bucket的Region（必填）")
+		secretID     = flag.String("secret-id", "", "腾讯云Secret ID（必填）")
+		secretKey    = flag.String("secret-key", "", "腾讯云Secret Key（必填）")
+		domainSuffix = flag.String("domain-suffix", "", "域名后缀（必填）")
+		cdnCheck     = flag.Bool("cdn-check", false, "是否检查CDN域名是否正常解析，默认为false")
 		port         = flag.Int64("port", 3321, "绑定端口，默认为3321")
 	)
+
+	*bucketRegion = getEnvVar("BUCKET_REGION", *bucketRegion)
+	*secretID = getEnvVar("SECRET_ID", *secretID)
+	*secretKey = getEnvVar("SECRET_KEY", *secretKey)
+	*domainSuffix = getEnvVar("DOMAIN_SUFFIX", *domainSuffix)
+	*cdnCheck = getEnvVarBool("CDN_CHECK", *cdnCheck)
+	*port = getEnvVarInt("PORT", *port)
+
 	flag.Parse()
 
-	// 检查必填项，若必填项没有填就输出--help的内容
 	if *bucketRegion == "" || *secretID == "" || *secretKey == "" || *domainSuffix == "" {
+		fmt.Println("缺少必填参数，请提供必填参数:")
 		flag.PrintDefaults()
 		os.Exit(1)
 	}
@@ -44,4 +53,34 @@ func main() {
 	table.Render()
 
 	proxy.StartProxy(infos, ":"+strconv.FormatInt(*port, 10))
+}
+
+func getEnvVar(envName string, defaultValue string) string {
+	envValue := os.Getenv(envName)
+	if envValue != "" && defaultValue == "" {
+		return envValue
+	}
+	return defaultValue
+}
+
+func getEnvVarBool(envName string, defaultValue bool) bool {
+	envValue := os.Getenv(envName)
+	if envValue != "" {
+		value, err := strconv.ParseBool(envValue)
+		if err == nil {
+			return value
+		}
+	}
+	return defaultValue
+}
+
+func getEnvVarInt(envName string, defaultValue int64) int64 {
+	envValue := os.Getenv(envName)
+	if envValue != "" {
+		value, err := strconv.ParseInt(envValue, 10, 64)
+		if err == nil {
+			return value
+		}
+	}
+	return defaultValue
 }
