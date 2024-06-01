@@ -4,22 +4,26 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
+
+	"github.com/olekukonko/tablewriter"
 	"proxy-cos-cdn/check"
 	"proxy-cos-cdn/proxy"
 	"proxy-cos-cdn/tencentyun"
-	"strconv"
-
-	"github.com/olekukonko/tablewriter"
+	"proxy-cos-cdn/types"
 )
 
 func main() {
 	var (
-		bucketRegion = flag.String("bucket-region", "", "Bucket的Region（必填）")
-		secretID     = flag.String("secret-id", "", "腾讯云Secret ID（必填）")
-		secretKey    = flag.String("secret-key", "", "腾讯云Secret Key（必填）")
-		domainSuffix = flag.String("domain-suffix", "", "域名后缀（必填）")
-		cdnCheck     = flag.Bool("cdn-check", false, "是否检查CDN域名是否正常解析，默认为false")
-		port         = flag.Int64("port", 3321, "绑定端口，默认为3321")
+		bucketRegion   = flag.String("bucket-region", "", "Bucket的Region（必填）")
+		secretID       = flag.String("secret-id", "", "腾讯云Secret ID（必填）")
+		secretKey      = flag.String("secret-key", "", "腾讯云Secret Key（必填）")
+		domainSuffix   = flag.String("domain-suffix", "", "域名后缀（必填）")
+		cdnCheck       = flag.Bool("cdn-check", false, "是否检查CDN域名是否正常解析，默认为false")
+		port           = flag.Int64("port", 3321, "绑定端口，默认为3321")
+		includeBuckets = flag.String("includeBuckets", "", "要包含的桶（逗号分隔）")
+		excludeBuckets = flag.String("excludeBuckets", "", "要排除的桶（逗号分隔）")
 	)
 
 	*bucketRegion = getEnvVar("BUCKET_REGION", *bucketRegion)
@@ -28,6 +32,8 @@ func main() {
 	*domainSuffix = getEnvVar("DOMAIN_SUFFIX", *domainSuffix)
 	*cdnCheck = getEnvVarBool("CDN_CHECK", *cdnCheck)
 	*port = getEnvVarInt("PORT", *port)
+	*includeBuckets = getEnvVar("INCLUDE_BUCKETS", *includeBuckets)
+	*excludeBuckets = getEnvVar("EXCLUDE_BUCKETS", *excludeBuckets)
 
 	flag.Parse()
 
@@ -39,20 +45,41 @@ func main() {
 
 	infos := tencentyun.InitCosClients(*bucketRegion, *secretID, *secretKey)
 
-	check.DNSRecord(infos, *domainSuffix)
+	// 过滤桶
+	includeBucketsList := strings.Split(*includeBuckets, ",")
+	excludeBucketsList := strings.Split(*excludeBuckets, ",")
+	filteredInfos := make([]*types.BucketInfo, 0)
+	for _, info := range infos {
+		if (len(includeBucketsList) == 0 || contains(includeBucketsList, info.BucketName)) &&
+			!contains(excludeBucketsList, info.BucketName) {
+			filteredInfos = append(filteredInfos, info)
+		}
+	}
+
+	check.DNSRecord(filteredInfos, *domainSuffix)
 	if *cdnCheck {
-		check.CDNReady(infos, *secretID, *secretKey)
+		check.CDNReady(filteredInfos, *secretID, *secretKey)
 	}
 
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"BucketName", "DisplayName", "Domain", "DNSResult", "CDNReady"})
-	for _, info := range infos {
+	for _, info := range filteredInfos {
 		table.Append([]string{info.BucketName, info.DisplayName, info.Domain, strconv.FormatBool(info.DNSResult),
 			info.CDNReady})
 	}
 	table.Render()
 
-	proxy.StartProxy(infos, ":"+strconv.FormatInt(*port, 10))
+	proxy.StartProxy(filteredInfos, ":"+strconv.FormatInt(*port, 10))
+}
+
+// contains 检查一个字符串切片是否包含一个特定的字符串
+func contains(s []string, str string) bool {
+	for _, v := range s {
+		if v == str {
+			return true
+		}
+	}
+	return false
 }
 
 func getEnvVar(envName string, defaultValue string) string {
