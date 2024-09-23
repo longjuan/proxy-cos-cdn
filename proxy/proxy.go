@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/sirupsen/logrus"
+	"github.com/tencentyun/cos-go-sdk-v5"
 	"proxy-cos-cdn/types"
 )
 
@@ -36,9 +37,15 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	queryParams := r.URL.Query()
+
+	opt := &cos.PresignedURLOptions{
+		Query: &queryParams,
+	}
+
 	// 获取签名
 	signedURL, err := client.Object.GetPresignedURL(context.Background(), http.MethodGet, objectKey, info.Ak, info.Sk,
-		time.Hour, nil)
+		time.Hour, opt)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		log(r, http.StatusInternalServerError)
